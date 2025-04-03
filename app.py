@@ -67,10 +67,13 @@ if uploaded_resume:
             with open(file_path, "rb") as pdf_file:
                 pdf_data = pdf_file.read()
 
-            col1, col2 = st.columns([4, 1])
+            col1, col2, col3 = st.columns([3, 1, 1])
             with col1:
                 st.write(f"{i}. 📄 **{file}** - 🏆 Score: {round(score * 100, 2)}%")
             with col2:
-                st.download_button(f"⬇️ Download {i}", pdf_data, file_name=file, mime="application/pdf")
+                st.download_button(f"⬇️ Download", pdf_data, file_name=file, mime="application/pdf")
+            with col3:
+                apply_link = f"https://www.example.com/jobs/{file.replace('.pdf', '')}"  # Example job application link
+                st.markdown(f"[🚀 Apply]( {apply_link} )", unsafe_allow_html=True)
 
         os.remove(temp_resume_path)

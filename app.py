@@ -60,8 +60,17 @@ if uploaded_resume:
 
         matches = get_top_jds(temp_resume_path, jd_folder, top_n)
 
-        st.write("### ✅ Top Matching Roles")
+        st.write("### ✅ Top Matching Job Descriptions:")
         for i, (file, score) in enumerate(matches, 1):
-            st.write(f"{i}. 📄 **{file}** - 🏆 Score: {round(score * 100, 2)}%")
+            file_path = os.path.join(jd_folder, file)
+
+            with open(file_path, "rb") as pdf_file:
+                pdf_data = pdf_file.read()
+
+            col1, col2 = st.columns([4, 1])
+            with col1:
+                st.write(f"{i}. 📄 **{file}** - 🏆 Score: {round(score * 100, 2)}%")
+            with col2:
+                st.download_button(f"⬇️ Download {i}", pdf_data, file_name=file, mime="application/pdf")
 
         os.remove(temp_resume_path)

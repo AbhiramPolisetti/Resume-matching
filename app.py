@@ -1,75 +1,67 @@
 import os
-import fitz 
+import fitz  # PyMuPDF for extracting text from PDFs
 import streamlit as st
-from sklearn.feature_extraction.text import TfidfVectorizer
+import numpy as np
+from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
 
-def extract_text_from_pdf(pdf_path: str) -> str:
-    """Extract text from a PDF file."""
+# Load SBERT model
+@st.cache_resource
+def load_model():
+    return SentenceTransformer('all-MiniLM-L6-v2')
+
+model = load_model()
+
+# Extract text from PDFs
+def extract_text_from_pdf(pdf_path):
+    """Extracts text content from a PDF file."""
     doc = fitz.open(pdf_path)
     text = " ".join(page.get_text("text") for page in doc)
     return text.strip()
 
-def get_top_matches(input_pdf: str, comparison_folder: str, top_n: int = 5):
-    """
-    Find top N matching files for a given input PDF using TF-IDF.
-    :param input_pdf: Path to the input PDF (Resume or JD).
-    :param comparison_folder: Path to the folder containing comparison PDFs (JDs or Resumes).
-    :param top_n: Number of top matches to return.
-    """
-    input_text = extract_text_from_pdf(input_pdf)
-    comparison_texts = []
-    comparison_files = []
+# Find Top N JD Matches
+def get_top_jds(resume_pdf, jd_folder, top_n=5):
+    """Matches resume with job descriptions and returns the top N results."""
+    resume_text = extract_text_from_pdf(resume_pdf)
+    jd_texts, jd_files = [], []
     
-    for file in os.listdir(comparison_folder):
+    for file in os.listdir(jd_folder):
         if file.endswith(".pdf"):
-            file_path = os.path.join(comparison_folder, file)
-            comparison_texts.append(extract_text_from_pdf(file_path))
-            comparison_files.append(file)
-    
-    # Compute TF-IDF vectors
-    vectorizer = TfidfVectorizer()
-    tfidf_matrix = vectorizer.fit_transform([input_text] + comparison_texts)
-    input_vector = tfidf_matrix[0]
-    comparison_vectors = tfidf_matrix[1:]
-    
+            file_path = os.path.join(jd_folder, file)
+            jd_texts.append(extract_text_from_pdf(file_path))
+            jd_files.append(file)
+
+    # Compute SBERT embeddings
+    resume_embedding = model.encode([resume_text], convert_to_numpy=True)
+    jd_embeddings = model.encode(jd_texts, convert_to_numpy=True)
+
     # Compute cosine similarity
-    similarities = cosine_similarity(input_vector, comparison_vectors)[0]
-    
-    # Sort by similarity and return top N
-    scores = sorted(zip(comparison_files, similarities), key=lambda x: x[1], reverse=True)
+    similarities = cosine_similarity(resume_embedding, jd_embeddings)[0]
+
+    # Sort results by similarity score
+    scores = sorted(zip(jd_files, similarities), key=lambda x: x[1], reverse=True)
     return scores[:top_n]
 
 # Streamlit UI
-st.title("Resume & Job Description Matching ")
-option = st.radio("Select Functionality:", ["Resume → JDs", "JD → Resumes"])
+st.title("📄 Resume → Job Description Matching")
 
-uploaded_file = st.file_uploader("Upload Resume or JD (PDF)", type=["pdf"])
-resume_folder = "resume_db" 
-jd_folder = "JD_db"  
+uploaded_resume = st.file_uploader("📤 Upload Resume (PDF)", type=["pdf"])
+jd_folder = "JD_db"  # Folder containing job descriptions
 
+if uploaded_resume:
+    if not os.listdir(jd_folder):
+        st.error("⚠️ No job descriptions found! Please add some PDFs to the 'JD_db' folder.")
+    else:
+        top_n = st.slider("🔢 Select Number of Job Matches:", 1, min(10, len(os.listdir(jd_folder))), 5)
 
-if uploaded_file:
-    # Determine comparison folder
-    comparison_folder = jd_folder if option == "Resume → JDs" else resume_folder
-    
-    # Set slider after determining comparison folder
-    top_n = st.slider("Number of top matches:", 1, len(os.listdir(comparison_folder)), min(5, len(os.listdir(comparison_folder))))
-    # Save uploaded file temporarily
-    temp_pdf_path = os.path.join("temp.pdf")
-    with open(temp_pdf_path, "wb") as f:
-        f.write(uploaded_file.getbuffer())
-    
-    # Determine comparison folder
-    comparison_folder = jd_folder if option == "Resume → JDs" else resume_folder
-    
-    # Get top matches
-    matches = get_top_matches(temp_pdf_path, comparison_folder, top_n)
-    
-    # Display results
-    st.write("### Top Matches:")
-    for i, (file, score) in enumerate(matches, 1):
-        st.write(f"{i}. {file} - Matching Score: {round(score * 100, 2)}%")
-    
-    # Clean up temp file
-    os.remove(temp_pdf_path)
+        temp_resume_path = "temp_resume.pdf"
+        with open(temp_resume_path, "wb") as f:
+            f.write(uploaded_resume.getbuffer())
+
+        matches = get_top_jds(temp_resume_path, jd_folder, top_n)
+
+        st.write("### ✅ Top Matching Roles")
+        for i, (file, score) in enumerate(matches, 1):
+            st.write(f"{i}. 📄 **{file}** - 🏆 Score: {round(score * 100, 2)}%")
+
+        os.remove(temp_resume_path)
